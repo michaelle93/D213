@@ -1,0 +1,179 @@
+--Preprocessing datasets--
+
+# Insert a tab in front of all the names
+names_df['input'] = names_df['input'].apply(lambda x : '\t' + x)
+
+# Append a newline at the end of every name
+# We already appended a tab in front, so the target word should start at index 1
+names_df['target'] = names_df['input'].apply(lambda x : x[1:len(x)] + '\n')
+
+
+
+
+
+--Preprocessing dataset to numeric values--
+
+# Get the vocabulary
+vocabulary = get_vocabulary(names_df['input'])
+
+# Sort the vocabulary
+vocabulary_sorted = sorted(vocabulary)
+
+# Create the mapping of the vocabulary chars to integers
+char_to_idx = { char : idx for idx, char in enumerate(vocabulary_sorted) }
+
+# Create the mapping of the integers to vocabulary chars
+idx_to_char = { idx : char for idx, char in enumerate(vocabulary_sorted) }
+
+# Print the dictionaries
+print(char_to_idx)
+print(idx_to_char)
+
+
+
+
+
+--Creating input and target tensors--
+
+# Find the length of longest name
+max_len = get_max_len(names_df['input'])
+
+# Initialize the input vector
+input_data = np.zeros((len(names_df['input']), max_len+1, len(vocabulary)), dtype='float32')
+
+# Initialize the target vector
+target_data = np.zeros((len(names_df['target']), max_len+1, len(vocabulary)), dtype='float32')
+
+
+
+
+
+--Initialize input and target vectors with values--
+
+# Iterate for each name in the dataset
+for n_idx, name in enumerate(names_df['input']):
+  # Iterate over each character and convert it to a one-hot encoded vector
+  for c_idx, char in enumerate(name):
+    input_data[n_idx, c_idx, char_to_idx[char]] = 1
+
+# Iterate for each name in the dataset
+for n_idx, name in enumerate(names_df['target']):
+  # Iterate over each character and convert it to a one-hot encoded vector
+  for c_idx, char in enumerate(name):
+    target_data[n_idx, c_idx, char_to_idx[char]] = 1
+
+
+
+
+
+--Build and compile RNN network--
+
+# Create a Sequential model
+model = Sequential()
+
+# Add SimpleRNN layer of 50 units
+model.add(SimpleRNN(50, input_shape=(max_len+1, len(vocabulary)), return_sequences=True))
+
+# Add a TimeDistributed Dense layer of size same as the vocabulary
+model.add(TimeDistributed(Dense(len(vocabulary), activation='softmax')))
+
+# Compile the model
+model.compile(loss='categorical_crossentropy', optimizer='adam')
+
+# Print the model summary
+model.summary()
+
+
+
+
+
+--Train RNN model and start predictions--
+
+##part1
+# Fit the model for 5 epochs using a batch size of 128 
+model.fit(input_data, target_data, batch_size=128, epochs=5)
+
+# Create a 3-D zero vector and initialize it with the start token
+output_seq = np.zeros((1, max_len+1, len(vocabulary)))
+output_seq[0, 0, char_to_idx['\t']] = 1
+
+##part2
+
+# Get the probabilities for the first character
+probs = model.predict_proba(output_seq, verbose=0)[:,1,:]
+
+# Sample vocabulary to get first character
+first_char = np.random.choice(sorted(vocabulary), replace=False, p=probs.reshape(len(vocabulary)))
+
+# Print the character generated
+print(first_char)
+
+
+
+
+
+--Generate 2nd character into the trained network--
+
+# Print the first character which we got last time
+print(first_char)
+
+# Update the vector to contain first the character
+output_seq[0, 1, char_to_idx[first_char]] = 1
+
+# Get the probabilities for the second character
+probs = model.predict_proba(output_seq, verbose=0)[:,2,:]
+
+# Sample vocabulary to get second character
+second_char = np.random.choice(sorted(list(vocabulary)), replace=False, p=probs.reshape(len(vocabulary)))
+
+# Print the second character
+print(second_char)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
