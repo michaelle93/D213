@@ -133,8 +133,173 @@ print(second_char)
 
 
 
+--Simple network with Keras and checking gradients--
+
+# Create a sequential model
+model = Sequential()
+
+# Create a dense layer of 12 units
+model.add(Dense(12, input_dim=8, init='uniform', activation='relu'))
+
+# Create a dense layer of 8 units
+model.add(Dense(8, init='uniform', activation='relu'))
+
+# Create a dense layer of 1 unit
+model.add(Dense(1, init='uniform', activation='sigmoid'))
+
+# Compile the model and get gradients
+model.compile(loss='binary_crossentropy', optimizer='adam')
+gradients = backend.gradients(model.output, model.trainable_weights)
 
 
+
+
+
+--Vanishing Gradient--
+
+# Create a sequential model
+model = Sequential()
+
+# Create a dense layer of 12 units
+model.add(Dense(12, input_dim=8, init='uniform', activation='relu'))
+
+# Create a dense layer of 8 units
+model.add(Dense(8, init='uniform', activation='relu'))
+
+# Create a dense layer of 1 unit
+model.add(Dense(1, init='uniform', activation='sigmoid'))
+
+# Compile the model and get gradients
+model.compile(loss='binary_crossentropy', optimizer='adam')
+gradients = backend.gradients(model.output, model.trainable_weights)
+
+
+
+
+
+--Vocabulary and character to integer mapping--
+
+# Find the vocabulary
+vocabulary = sorted(set(text))
+
+# Print the vocabulary size
+print('Vocabulary size:', len(vocabulary))
+
+# Dictionary to save the mapping from char to integer
+char_to_idx = { char : idx for idx, char in enumerate(vocabulary) }
+
+# Dictionary to save the mapping from integer to char
+idx_to_char = { idx : char for idx, char in enumerate(vocabulary) }
+
+# Print char_to_idx and idx_to_char
+print(char_to_idx)
+print(idx_to_char)
+
+
+
+
+
+--input and target dataset--
+
+# Create empty lists for input and target dataset
+input_data = []
+target_data = []
+
+# Iterate to get all substrings of length maxlen
+for i in range(0, len(text) - maxlen):
+    # Find the sequence of length maxlen starting at i
+    input_data.append(text[i : i+maxlen])
+    
+    # Find the next char after this sequence 
+    target_data.append(text[i+maxlen])
+
+# Print number of sequences in input data
+print('No of Sequences:', len(input_data))
+
+
+
+
+
+--Create and initialize the input and target vectors for text generation--
+
+# Create a 3-D zero vector to contain the encoded input sequences
+x = np.zeros((len(input_data), maxlen, len(vocabulary)), dtype='float32')
+
+# Create a 2-D zero vector to contain the encoded target characters
+y = np.zeros((len(target_data), len(vocabulary)), dtype='float32')
+
+# Iterate over the sequences
+for s_idx, sequence in enumerate(input_data):
+    # Iterate over all characters in the sequence
+    for idx, char in enumerate(sequence):
+        # Fill up vector x
+        x[s_idx, idx, char_to_idx[char]] = 1    
+    # Fill up vector y
+    y[s_idx, char_to_idx[target_data[s_idx]]] = 1
+
+
+
+
+
+--Create LSTM model in Keras--
+
+# Create Sequential model 
+model = Sequential()
+
+# Add an LSTM layer of 128 units
+model.add(LSTM(128, input_shape=(maxlen, len(vocabulary))))
+
+# Add a Dense output layer
+model.add(Dense(len(vocabulary), activation='softmax'))
+
+# Compile the model
+model.compile(loss='categorical_crossentropy', optimizer='adam')
+
+# Print model summary
+model.summary()
+
+
+
+
+
+--Train LSTM Model--
+
+# Create Sequential model 
+model = Sequential()
+
+# Add an LSTM layer of 128 units
+model.add(LSTM(128, input_shape=(maxlen, len(vocabulary))))
+
+# Add a Dense output layer
+model.add(Dense(len(vocabulary), activation='softmax'))
+
+# Compile the model
+model.compile(loss='categorical_crossentropy', optimizer='adam')
+
+# Fit the model
+model.fit(x, y, batch_size=64, epochs=1, validation_split=0.2)
+
+
+
+
+
+--Predicint next character given a sequence--
+
+# Input sequence
+sentence = "that, poor contempt, or claim'd thou sle"
+
+# Create a 3-D zero vector to contain the encoding of sentence.
+X_test = np.zeros((1, maxlen, len(vocabulary)))
+
+# Iterate over each character and convert them to one-hot encoded vector.
+for s_idx, char in enumerate(sentence):
+    X_test[0, s_idx, char_to_idx[char]] = 1
+    
+# Get the probability distribution using model predict
+preds = model.predict(X_test, verbose=0)
+
+# Get the probability distribution for the first character after the sequence
+preds_next_char = preds[0]
 
 
 
