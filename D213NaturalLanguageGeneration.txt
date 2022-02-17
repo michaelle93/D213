@@ -305,6 +305,161 @@ preds_next_char = preds[0]
 
 
 
+--Create sequence to sequence generation for translating language--
+
+# Consider only the first 50 lines of the dataset
+for i in range(50):
+	# Split each line into two at the tab character
+    eng_fra_line = str(lines[i]).split('\t')
+    
+    # Separate out the English sentence 
+    eng_line = eng_fra_line[0]
+    
+    # Append the start and end token to each French sentence
+    fra_line = '\t' + eng_fra_line[1] + '\n'
+    
+    # Append the English and French sentence to the list of sentences
+    english_sentences.append(eng_line)
+    french_sentences.append(fra_line)
+
+
+
+
+
+-- Getting vocabularies 
+
+# Create an empty set to contain the French vocabulary 
+french_vocab = set()
+
+# Iterate over each French sentence
+for fra_line in french_sentences:
+  
+    # Convert the French line to a set
+    fra_line_set = set(fra_line)
+    
+    # Update French vocabulary with new characters from this line.
+    french_vocab = french_vocab.union(fra_line_set)
+
+# Sort the vocabulary
+french_vocab = sorted(list(french_vocab))
+
+
+
+
+
+--Mapping characters to integers and vice versa--
+
+# Dictionary to contain the character to integer mapping for French
+fra_char_to_idx = dict((char, idx) for idx, char in enumerate(french_vocab))
+
+# Dictionary to contain the integer to character mapping for French
+fra_idx_to_char = dict((idx, char) for idx, char in enumerate(french_vocab))
+
+
+
+
+
+--Define the input and target vectors--
+
+# Find the length of the longest English sentence
+max_len_eng_sent = max([len(sentence) for sentence in english_sentences])
+
+# Find the length of the longest French sentence
+max_len_fra_sent = max([len(sentence) for sentence in french_sentences])
+
+# Create a 3-D zero vector for the input English data
+eng_input_data = np.zeros((len(english_sentences), max_len_eng_sent, len(english_vocab)), dtype='float32')
+
+# Create a 3-D zero vector for the input French data
+fra_input_data = np.zeros((len(french_sentences), max_len_fra_sent, len(french_vocab)), dtype='float32')
+
+# Create the target vector
+target_data = np.zeros((len(french_sentences), max_len_fra_sent, len(french_vocab)), dtype='float32')
+
+
+
+
+
+--Initialize the input and target vectors--
+
+# Iterate over the 50 sentences
+for i in range(50):
+    # Iterate over each English character of each sentence
+    for k, ch in enumerate(english_sentences[i]):
+        # Convert the character to one-hot encoded vector
+        eng_input_data[i, k, eng_char_to_idx[ch]] = 1.
+    
+    # Iterate over each French character of each sentence
+    for k, ch in enumerate(french_sentences[i]):
+        # Convert the character to one-hot encoded vector
+        fra_input_data[i, k, fra_char_to_idx[ch]] = 1.
+
+        # Target data will be one timestep ahead and excludes start character
+        if k > 0:
+            target_data[i, k-1, fra_char_to_idx[ch]] = 1.
+
+
+
+
+
+--Building encoder--
+
+# Create input layer
+encoder_input = Input(shape=(None, len(english_vocab)))
+
+# Create LSTM Layer of size 256
+encoder_LSTM = LSTM(256, return_state = True)
+
+# Save encoder output, hidden and cell state
+encoder_outputs, encoder_h, encoder_c = encoder_LSTM(encoder_input)
+
+# Save encoder states
+encoder_states = [encoder_h, encoder_c]
+
+
+
+
+
+--Build the decoder--
+
+# Create decoder input layer
+decoder_input = Input(shape=(None, len(french_vocab)))
+
+# Create LSTM layer of size 256
+decoder_LSTM = LSTM(256, return_sequences=True, return_state = True)
+
+# Save decoder output
+decoder_out, _ , _ = decoder_LSTM(decoder_input, initial_state=encoder_states)
+
+# Create a Dense layer with softmax activation
+decoder_dense = Dense(len(french_vocab), activation='softmax')
+
+# Save the decoder output
+decoder_out = decoder_dense(decoder_out)
+
+
+
+
+
+--Train the encoder and decoder network--
+
+# Build model
+model = Model(inputs=[encoder_input, decoder_input],outputs=[decoder_out])
+
+# Compile the model
+model.compile(optimizer='rmsprop', loss='categorical_crossentropy')
+
+# Print model summary
+model.summary()
+
+# Fit the model
+model.fit(x=[eng_input_data, fra_input_data], y=target_data,
+          		batch_size=64, epochs=1, validation_split=0.2)
+
+
+
+
+
 
 
 
