@@ -460,6 +460,332 @@ model.fit(x=[eng_input_data, fra_input_data], y=target_data,
 
 
 
+--Build inference models for encoder and decoder--
+
+# Create encoder inference model
+encoder_model_inf = Model(encoder_input, encoder_states)
+
+# Create decoder input states for inference
+decoder_state_input_h = Input(shape=(256,))
+decoder_state_input_c = Input(shape=(256,))
+decoder_input_states = [decoder_state_input_h, decoder_state_input_c]
+
+# Create decoder output states for inference
+decoder_out, decoder_h, decoder_c = decoder_LSTM(decoder_input, initial_state=decoder_input_states)
+decoder_states = [decoder_h , decoder_c]
+
+# Create decoder dense layer
+decoder_out = decoder_dense(decoder_out)
+decoder_model_inf = Model(inputs=[decoder_input] + decoder_input_states, outputs=[decoder_out] + decoder_states )
+
+
+
+
+
+--Predict the first character--
+
+# Get encoder internal state by passing a sentence as input
+inp_seq = eng_input_data[0:1]
+states_val = encoder_model_inf.predict(inp_seq)
+
+# Seed the first character and get output from the decoder 
+target_seq = np.zeros((1, 1, len(french_vocab)))
+target_seq[0, 0, fra_char_to_idx['\t']] = 1  
+decoder_out, decoder_h, decoder_c = decoder_model_inf.predict(x=[target_seq] + states_val)
+
+# Find out the next character from the Decoder output
+max_val_index = np.argmax(decoder_out[0,-1,:])
+sampled_fra_char = fra_idx_to_char[max_val_index]
+
+# Print the first character predicted by the decoder
+print(sampled_fra_char)
+
+
+
+
+
+--Predict the second character--
+
+# Fill up target seq with the new char generated 
+target_seq = np.zeros((1, 1, len(french_vocab)))
+target_seq[0, 0, max_val_index] = 1
+
+# Get decoder final states from last time
+states_val = [decoder_h, decoder_c]
+
+# Generate the next character
+decoder_out, decoder_h, decoder_c = decoder_model_inf.predict(x=[target_seq] + states_val)
+
+# Map the prediction to char and print it
+max_val_index = np.argmax(decoder_out[0,-1,:])
+sampled_fra_char = fra_idx_to_char[max_val_index]
+
+print(sampled_fra_char)
+
+
+
+
+
+--Generate fully translated sentence--
+
+# Generate 10 French sentences from inp_seq
+for seq_index in range(10):
+  
+    # Get next encoded english sentence
+    inp_seq = eng_input_data[seq_index:seq_index+1]
+    
+    # Get the translated sentence
+    translated_sent = translate_eng_sentence(inp_seq)
+    
+    # Print the original English sentence
+    print('English sentence:', english_sentences[seq_index])
+    
+    # Print the translated French sentence
+    print('French sentence:', translated_sent)
+
+
+
+
+
+--Divide the sentences into prefixes and suffixes--
+
+# Empty lists to store the prefixes and the suffixes
+prefix_sentences = []
+suffix_sentences = []
+
+# Create one prefix and one suffix at each character of each email
+for email in corpus:
+    for index in range(len(email)):
+        # Find the prefix and suffix
+        prefix = email[: index+1]
+        suffix = '\t' + email[index+1 :] + '\n'
+        
+        # Add the prefix and suffix to the list of prefix and suffix sentences
+        prefix_sentences.append(prefix)
+        suffix_sentences.append(suffix)
+
+
+
+
+
+--Create vocabulary and mappings--
+
+# Initialize vocabulary with the start and end token
+vocabulary = set(['\t', '\n'])
+
+# Iterate for each char in each email
+for email in corpus:
+    for char in email:
+        # Add the char if not in vocabulary, 
+        if (char not in vocabulary):
+            vocabulary.add(char)            
+# Sort the vocabulary
+vocabulary = sorted(vocabulary)
+
+# Create char to int and int to char mapping
+char_to_idx = dict((char, idx) for idx, char in enumerate(vocabulary))
+idx_to_char = dict((idx, char) for idx, char in enumerate(vocabulary))
+
+
+
+
+
+--find length of longest prefix and suffix--
+
+# Find the length of the longest prefix
+max_len_prefix_sent = max([len(prefix) for prefix in prefix_sentences])
+
+# Find the length of the longest suffix
+max_len_suffix_sent = max([len(suffix) for suffix in suffix_sentences])
+
+
+
+
+
+--Define input and target vectors--
+
+# Define a 3-D zero vector for the prefix sentences
+input_data_prefix = np.zeros((len(prefix_sentences), max_len_prefix_sent, 
+                              len(vocabulary)), dtype='float32')
+
+# Define a 3-D zero vector for the suffix sentences
+input_data_suffix = np.zeros((len(suffix_sentences), max_len_suffix_sent, 
+                              len(vocabulary)), dtype='float32')
+
+# Define a 3-D zero vector for the target data
+target_data = np.zeros((len(suffix_sentences), max_len_suffix_sent, 
+                        len(vocabulary)), dtype='float32')
+
+
+
+
+
+--initialize the input and target vectors--
+
+for i in range(len(prefix_sentences)):
+    # Iterate over each character in each prefix
+    for k, ch in enumerate(prefix_sentences[i]):
+        # Convert the character to a one-hot encoded vector
+        input_data_prefix[i, k, char_to_idx[ch]] = 1
+        
+    # Iterate over each character in each suffix
+    for k, ch in enumerate(suffix_sentences[i]):
+        # Convert the character to a one-hot encoded vector
+        input_data_suffix[i, k, char_to_idx[ch]] = 1
+
+        # Target data is one timestep ahead and excludes start character
+        if k > 0:
+            target_data[i, k-1, char_to_idx[ch]] = 1
+
+
+
+
+
+--Building the encoder--
+
+# Create the input layer of the encoder
+encoder_input = Input(shape=(None, len(vocabulary)))
+
+# Create LSTM Layer of size 256
+encoder_LSTM = LSTM(256, return_state = True)
+
+# Save encoder output, hidden and cell state
+encoder_outputs, encoder_h, encoder_c = encoder_LSTM(encoder_input)
+
+# Save encoder states
+encoder_states = [encoder_h, encoder_c]
+
+
+
+
+
+--Building the decoder--
+
+# Create decoder input layer
+decoder_input = Input(shape=(None, len(vocabulary)))
+
+# Create LSTM layer of size 256
+decoder_LSTM = LSTM(256,return_sequences=True, return_state = True)
+
+# Save decoder output
+decoder_out, _ , _ = decoder_LSTM(decoder_input, initial_state=encoder_states)
+
+# Create a `Dense` layer with softmax activation
+decoder_dense = Dense(len(vocabulary),activation='softmax')
+
+# Save the decoder output
+decoder_out = decoder_dense(decoder_out)
+
+
+
+
+
+--Train the encoder and decoder--
+
+# Build model
+model = Model(inputs=[encoder_input, decoder_input],outputs=[decoder_out])
+
+# Compile the model
+model.compile(optimizer='adam', loss='categorical_crossentropy')
+
+# Print model summary
+model.summary()
+
+# Fit the model
+model.fit(x=[input_data_prefix, input_data_suffix], y=target_data,
+          batch_size=64, epochs=1, validation_split=0.2)
+
+
+
+
+
+--Building the inference models--
+
+# Create encoder inference model
+encoder_model_inf = Model(encoder_input, encoder_states)
+
+# Create decoder input states for inference
+decoder_state_input_h = Input(shape=(256,))
+decoder_state_input_c = Input(shape=(256,))
+decoder_input_states = [decoder_state_input_h, decoder_state_input_c]
+
+# Get decoder output and feed it to the dense layer for final output prediction
+decoder_out, decoder_h, decoder_c = decoder_LSTM(decoder_input, initial_state=decoder_input_states)
+decoder_states = [decoder_h , decoder_c]
+decoder_out = decoder_dense(decoder_out)
+
+# Create decoder inference model
+decoder_model_inf = Model(inputs=[decoder_input] + decoder_input_states, outputs=[decoder_out] + decoder_states )
+
+
+
+
+
+--Predict first character using inference models--
+
+# Pass input prefix to the Encoder inference model and get the states
+inp_seq = input_data_prefix[4:5]
+states_val = encoder_model_inf.predict(inp_seq)
+
+# Seed the first character and get output from the decoder 
+target_seq = np.zeros((1, 1, len(vocabulary)))
+target_seq[0, 0, char_to_idx['\t']] = 1  
+decoder_out, decoder_h, decoder_c = decoder_model_inf.predict(x=[target_seq] + states_val)
+
+# Find out the next character from the Decoder output
+max_val_index = np.argmax(decoder_out[0,-1,:])
+sampled_suffix_char = idx_to_char[max_val_index]
+
+# Print the first character
+print(sampled_suffix_char)
+
+
+
+
+
+--predict the second character--
+
+# Insert the generated character from last time to the target sequence 
+target_seq = np.zeros((1, 1, len(vocabulary)))
+target_seq[0, 0, max_val_index] = 1
+
+# Initialize the decoder state to the states from last iteration
+states_val = [decoder_h, decoder_c]
+
+# Get decoder output
+decoder_out, decoder_h, decoder_c = decoder_model_inf.predict(x=[target_seq] + states_val)
+
+# Get most probable next character and print it.
+max_val_index = np.argmax(decoder_out[0,-1,:])
+sampled_suffix_char = idx_to_char[max_val_index]
+print(sampled_suffix_char)
+
+
+
+
+
+--Autocomplete sentences--
+
+# Generate 10 suffixes
+for seq_index in range(10):
+  
+    # Get the next tokenized sentence
+    inp_seq = input_data_prefix[seq_index:seq_index+1]
+    
+    # Generate the suffix sentence
+    suffix_sent = generate_suffix_sentence(inp_seq)
+    
+    # Print the prefix sentence
+    print('Prefix Sentence:', prefix_sentences[seq_index])
+    
+    # Print the suffix sentence
+    print('Suffix Sentence:', suffix_sent)
+
+
+
+
+
+
 
 
 
